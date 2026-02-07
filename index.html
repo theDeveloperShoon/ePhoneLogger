@@ -157,9 +157,9 @@
               <label for="d-customerName">Customer Name</label>
               <input class="w-full" type="text" id="d-customerName" name="customerName">
             </div>
-            <div class="form-group">
+            <div class="form-group relative">
               <label for="d-companyName">Company Name</label>
-              <input class="w-full" type="text" id="d-companyName" name="companyName">
+              <input class="w-full" type="text" id="d-companyName" name="companyName" list="company-suggestions" autocomplete="off">
             </div>
             <div class="form-group">
               <label for="address">Address</label>
@@ -224,9 +224,9 @@
           <label for="customerName">Customer Name</label>
           <input class="w-full" type="text" id="customerName" name="customerName">
         </div>
-        <div class="form-group">
+        <div class="form-group relative">
           <label for="companyName">Company Name</label>
-          <input class="w-full" type="text" id="companyName" name="companyName">
+          <input class="w-full" type="text" id="companyName" name="companyName" list="company-suggestions" autocomplete="off">
         </div>
         <div class="form-group">
           <label for="address">Address</label>
@@ -258,6 +258,7 @@
       </form>
     </div>
   </main>
+  <datalist id="company-suggestions"></datalist>
   <script>
     // Sidebar collapse
     const sidebar = document.getElementById('sidebar');
@@ -350,7 +351,18 @@
         const { calls } = await window.callsApi.getCalls();
         updateMetricsFromCalls(calls);
         renderLogs(calls);
+        updateCompanySuggestions(calls);
       } catch (_) {}
+    }
+
+    function updateCompanySuggestions(calls) {
+      const datalist = document.getElementById('company-suggestions');
+      if (!datalist) return;
+      const companies = [...new Set((calls || [])
+        .map((c) => (c.companyName || '').trim())
+        .filter(Boolean)
+      )].sort((a, b) => a.localeCompare(b));
+      datalist.innerHTML = companies.map((c) => `<option value="${escapeHtml(c)}">`).join('');
     }
 
     function getWeekBounds(date) {
