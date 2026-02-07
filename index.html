@@ -192,8 +192,8 @@
     <!-- Logs Page -->
     <div id="page-logs" class="page hidden">
       <h1 class="text-2xl font-semibold text-slate-800 mb-6">Call Logs</h1>
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-8">
-        <p class="text-slate-500">Log entries will appear here.</p>
+      <div id="logs-list" class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 max-w-2xl">
+        <p class="text-slate-500">Loading…</p>
       </div>
     </div>
 
@@ -286,6 +286,8 @@
     window.addEventListener('hashchange', () => showPage(getPageFromHash()));
     showPage(getPageFromHash());
 
+    refreshCallsData();
+
     // Add phone call widget toggle
     const addCallToggle = document.getElementById('add-call-toggle');
     const addCallForm = document.getElementById('add-call-form');
@@ -298,20 +300,115 @@
       addCallChevron.classList.toggle('rotate-180', !addCallExpanded);
     });
 
-    // Form submit handlers (placeholder)
-    document.getElementById('dashboard-call-form')?.addEventListener('submit', (e) => {
+    // Form data helper
+    function formToCall(form) {
+      const fd = new FormData(form);
+      return {
+        estimator: fd.get('estimator') || '',
+        customerName: fd.get('customerName') || '',
+        companyName: fd.get('companyName') || '',
+        address: fd.get('address') || '',
+        town: fd.get('town') || '',
+        telephone: fd.get('telephone') || '',
+        cellphone: fd.get('cellphone') || '',
+        email: fd.get('email') || '',
+        descriptionOfWork: fd.get('descriptionOfWork') || '',
+      };
+    }
+
+    async function saveCallAndRefresh(call) {
+      if (typeof window.callsApi === 'undefined') {
+        alert('Save requires the Electron app. Run with: npm start');
+        return;
+      }
+      try {
+        await window.callsApi.saveCall(call);
+        refreshCallsData();
+      } catch (err) {
+        alert('Failed to save: ' + (err?.message || err));
+      }
+    }
+
+    async function refreshCallsData() {
+      if (typeof window.callsApi === 'undefined') return;
+      try {
+        const { calls } = await window.callsApi.getCalls();
+        updateMetricsFromCalls(calls);
+        renderLogs(calls);
+      } catch (_) {}
+    }
+
+    function getWeekBounds(date) {
+      const d = new Date(date);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(d);
+      monday.setDate(diff);
+      monday.setHours(0, 0, 0, 0);
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      sunday.setHours(23, 59, 59, 999);
+      return { monday, sunday };
+    }
+
+    function updateMetricsFromCalls(calls) {
+      const now = new Date();
+      const thisWeek = getWeekBounds(now);
+      const lastWeekStart = new Date(thisWeek.monday);
+      lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+      const lastWeekEnd = new Date(lastWeekStart);
+      lastWeekEnd.setDate(lastWeekStart.getDate() + 6);
+      lastWeekEnd.setHours(23, 59, 59, 999);
+      const lastWeek = calls.filter((c) => {
+        const t = new Date(c.timestamp);
+        return t >= lastWeekStart && t <= lastWeekEnd;
+      }).length;
+      const thisWeekCount = calls.filter((c) => {
+        const t = new Date(c.timestamp);
+        return t >= thisWeek.monday && t <= thisWeek.sunday;
+      }).length;
+      updateMetrics({ lastWeek, thisWeek: thisWeekCount });
+    }
+
+    function renderLogs(calls) {
+      const container = document.getElementById('logs-list');
+      if (!container) return;
+      if (!calls || calls.length === 0) {
+        container.innerHTML = '<p class="text-slate-500">No call logs yet.</p>';
+        return;
+      }
+      const sorted = [...calls].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      container.innerHTML = sorted.map((c) => {
+        const date = new Date(c.timestamp).toLocaleString();
+        const name = c.customerName || c.companyName || '(No name)';
+        return `<div class="border-b border-slate-200 py-3 last:border-0">
+          <p class="font-medium text-slate-800">${escapeHtml(name)}</p>
+          <p class="text-sm text-slate-500">${escapeHtml(date)} · ${escapeHtml(c.estimator || '-')}</p>
+          ${c.descriptionOfWork ? `<p class="text-sm text-slate-600 mt-1">${escapeHtml(c.descriptionOfWork.slice(0, 100))}${c.descriptionOfWork.length > 100 ? '…' : ''}</p>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s ?? '';
+      return div.innerHTML;
+    }
+
+    document.getElementById('dashboard-call-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      // TODO: persist call data
-      alert('Call logged (placeholder)');
+      const call = formToCall(e.target);
+      await saveCallAndRefresh(call);
+      e.target.reset();
     });
-    document.getElementById('full-entry-form')?.addEventListener('submit', (e) => {
+    document.getElementById('full-entry-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      // TODO: persist entry
-      alert('Entry saved (placeholder)');
+      const call = formToCall(e.target);
+      await saveCallAndRefresh(call);
+      e.target.reset();
     });
 
-    // Metrics: update with real data when available. Example:
-    // updateMetrics({ lastWeek: 42, thisWeek: 48 });
+    // Metrics
     function updateMetrics({ lastWeek, thisWeek }) {
       document.getElementById('metric-last-week').textContent = lastWeek;
       document.getElementById('metric-this-week').textContent = thisWeek;
