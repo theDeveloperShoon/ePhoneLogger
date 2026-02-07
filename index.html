@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Phone Logger</title>
   <link rel="stylesheet" href="output.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     * {
       box-sizing: border-box;
@@ -110,11 +111,19 @@
     <div id="page-dashboard" class="page max-w-4xl">
       <h1 class="text-2xl font-semibold text-slate-800 mb-6">Dashboard</h1>
 
-      <!-- Graph Placeholder -->
+      <!-- Call Volume Graph -->
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-8 mb-6">
-        <h2 class="text-sm font-medium text-slate-500 mb-4">Call Volume Over Time</h2>
-        <div class="h-64 bg-slate-100 rounded-lg flex items-center justify-center border-2 border-dashed border-slate-300">
-          <span class="text-slate-400">Chart placeholder</span>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-sm font-medium text-slate-500">Call Volume Over Time</h2>
+          <div class="flex gap-1">
+            <button type="button" class="chart-filter px-3 py-1.5 text-sm rounded-lg transition-colors" data-period="day">Day</button>
+            <button type="button" class="chart-filter px-3 py-1.5 text-sm rounded-lg transition-colors" data-period="week">Week</button>
+            <button type="button" class="chart-filter px-3 py-1.5 text-sm rounded-lg transition-colors" data-period="month">Month</button>
+            <button type="button" class="chart-filter px-3 py-1.5 text-sm rounded-lg transition-colors" data-period="year">Year</button>
+          </div>
+        </div>
+        <div class="h-64">
+          <canvas id="calls-chart"></canvas>
         </div>
       </div>
 
@@ -352,8 +361,133 @@
         updateMetricsFromCalls(calls);
         renderLogs(calls);
         updateCompanySuggestions(calls);
+        renderCallsChart(calls);
       } catch (_) {}
     }
+
+    let callsChart = null;
+    let chartPeriod = localStorage.getItem('chartPeriod') || 'day';
+
+    function getChartData(calls, period) {
+      const list = calls || [];
+      const labels = [];
+      const data = [];
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (period === 'day') {
+        const days = 14;
+        for (let i = days - 1; i >= 0; i--) {
+          const d = new Date(today);
+          d.setDate(d.getDate() - i);
+          labels.push(d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
+          const dayStart = new Date(d);
+          dayStart.setHours(0, 0, 0, 0);
+          const dayEnd = new Date(d);
+          dayEnd.setHours(23, 59, 59, 999);
+          data.push(list.filter((c) => {
+            const t = new Date(c.timestamp);
+            return t >= dayStart && t <= dayEnd;
+          }).length);
+        }
+      } else if (period === 'week') {
+        const weeks = 12;
+        const thisWeekMonday = getWeekBounds(today).monday;
+        for (let i = weeks - 1; i >= 0; i--) {
+          const monday = new Date(thisWeekMonday);
+          monday.setDate(monday.getDate() - i * 7);
+          const bounds = getWeekBounds(monday);
+          labels.push(bounds.monday.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + '–' + bounds.sunday.getDate());
+          data.push(list.filter((c) => {
+            const t = new Date(c.timestamp);
+            return t >= bounds.monday && t <= bounds.sunday;
+          }).length);
+        }
+      } else if (period === 'month') {
+        const months = 12;
+        for (let i = months - 1; i >= 0; i--) {
+          const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+          labels.push(d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' }));
+          const monthStart = new Date(d);
+          const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+          data.push(list.filter((c) => {
+            const t = new Date(c.timestamp);
+            return t >= monthStart && t <= monthEnd;
+          }).length);
+        }
+      } else if (period === 'year') {
+        const years = 5;
+        for (let i = years - 1; i >= 0; i--) {
+          const y = today.getFullYear() - i;
+          labels.push(String(y));
+          const yearStart = new Date(y, 0, 1);
+          const yearEnd = new Date(y, 11, 31, 23, 59, 59, 999);
+          data.push(list.filter((c) => {
+            const t = new Date(c.timestamp);
+            return t >= yearStart && t <= yearEnd;
+          }).length);
+        }
+      }
+      return { labels, data };
+    }
+
+    function renderCallsChart(calls) {
+      const canvas = document.getElementById('calls-chart');
+      if (!canvas || typeof Chart === 'undefined') return;
+
+      const { labels, data } = getChartData(calls, chartPeriod);
+
+      if (callsChart) callsChart.destroy();
+      callsChart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Phone calls',
+            data,
+            backgroundColor: 'rgba(30, 41, 59, 0.7)',
+            borderColor: 'rgb(30, 41, 59)',
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { stepSize: 1 },
+            },
+          },
+        },
+      });
+    }
+
+    function setChartPeriod(period) {
+      chartPeriod = period;
+      localStorage.setItem('chartPeriod', period);
+      document.querySelectorAll('.chart-filter').forEach((btn) => {
+        const active = btn.dataset.period === period;
+        btn.classList.toggle('bg-slate-800', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('text-slate-600', !active);
+        btn.classList.toggle('hover:bg-slate-100', !active);
+      });
+    }
+
+    setChartPeriod(chartPeriod);
+
+    document.querySelectorAll('.chart-filter').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        setChartPeriod(btn.dataset.period);
+        if (typeof window.callsApi !== 'undefined') {
+          window.callsApi.getCalls().then(({ calls }) => renderCallsChart(calls));
+        }
+      });
+    });
 
     function updateCompanySuggestions(calls) {
       const datalist = document.getElementById('company-suggestions');
