@@ -15,10 +15,15 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "watch:css": "tailwindcss -i ./input.css -o ./output.css --watch",
     "start": "electron .",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "devDependencies": {
     "electron": "^40.2.1"
+  },
+  "dependencies": {
+    "@tailwindcss/cli": "^4.1.18",
+    "tailwindcss": "^4.1.18"
   }
 }
